@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Top Doge dev page</title>
+<style>html, body { margin: 0; height: 100%; background: #111; } #stage { position: relative; height: 100%; overflow: hidden; }</style>
+<script type="importmap">{ "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three-addons/", "@doge-brawl/shared/": "/shared/", "viem": "/npm/viem" } }</script>
+</head>
+<body>
+<div id="stage"></div>
+<!-- Every game's dev page (shared/src/testkit.ts serves it at /play.html in any game folder): the game's page.ts run by
+     the host on its public level, as the hub's practice runs it. ?practice, ?start (the Demo, against bot.ts DEMO),
+     ?check=<skill> (the bot's run played as the player's), ?field (the bot at five skills as the brawl's runs), ?key=3
+     (another level), ?at=60 (joined that many seconds in), ?hat=5&body=4 (skin ids). A game's dev.ts adds its own flags
+     and may give { look, key, record(sent) }. Each run but a check is kept in the folder's runs/ through its notes.ts,
+     with record's fields. globalThis.hub = { sent, el, score } for the tests. -->
+<script type="module">
+import * as dev from "/dev.ts" // first: it may set what the game's modules read as they load (Mars's knobs)
+import game from "/index.ts"
+import page from "/page.ts"
+import bot, * as bots from "/bot.ts"
+import { host } from "@doge-brawl/shared/host"
+import { botInputs, COUNTDOWN_MS, finish, play } from "@doge-brawl/shared/play"
+import { keep } from "@doge-brawl/shared/notes"
+import * as noted from "/notes.ts" // the test kit serves an empty module for a game without one
+const q = new URLSearchParams(location.search)
+const el = document.querySelector("#stage")
+const hub = (globalThis.hub = { sent: [], el, score: undefined })
+const own = dev.default?.(q, hub) ?? {}
+const key = own.key ?? Number(q.get("key") ?? 0)
+const parts = Array.from({ length: Math.ceil(game.maxSteps / game.partSteps) }, (_, i) => game.part(key, i))
+const partOf = (i) => parts[i]
+// A bot's whole run, as the house plays it: its inputs for each part as it comes, in one list that grows (a bot may
+// keep its run per list, as DogeBread's does).
+const run = (skill) => {
+  const shown = []
+  return parts.flatMap((part) => (shown.push(part), botInputs(bot(shown, skill))))
+}
+const ghost = (name, skill) => {
+  const inputs = run(skill), p = play(game, partOf)
+  finish(p, inputs) // a bot may play on past its end
+  return { name, trace: game.trace?.(inputs, parts) ?? [], score: game.score(p.state) }
+}
+const mode = q.has("check") ? "check" : q.has("start") ? "demo" : q.has("practice") ? "practice" : "run"
+const look = { wear: Object.fromEntries(["hat", "body"].filter((k) => q.has(k)).map((k) => [k, Number(q.get(k))])), mode, watch: mode === "check" ? "MoonShiba" : undefined, ...own.look }
+const ghosts = mode === "demo" ? bots.DEMO : q.has("field") ? ["SirChomp", "LoafBean", "MuchWoof", "ZoomPup", "CrumbBoi"].map((name, i) => ghost(name, 1 - i * 0.15)) : undefined
+const h = host(el, game, page, look, {
+  leave: () => location.reload(),
+  partOf,
+  inputs: mode === "check" ? run(Number(q.get("check") || 1)) : undefined,
+  ghosts,
+  hash: true,
+})
+hub.sent = h.sent
+const lobby = await h.lobby
+const startsAt = q.has("at") ? Date.now() - 1000 * Number(q.get("at")) : lobby ?? Date.now() + COUNTDOWN_MS
+h.start(startsAt)
+if (noted.notes && mode !== "check") keep(game, partOf, h.sent, startsAt, noted.notes(), () => own.record?.(h.sent) ?? {})
+hub.score = await h.end
+// The hub shows the result here; this page offers the next run.
+const again = Object.assign(document.createElement("button"), { textContent: `Score ${hub.score} · Play again`, onclick: () => location.reload() })
+again.style.cssText = "position:fixed;left:50%;top:58%;transform:translateX(-50%);white-space:nowrap;padding:14px 22px;border:0;border-radius:14px;background:#e8b04a;color:#1a1208;font:700 18px Rubik,system-ui,sans-serif;z-index:9"
+document.body.append(again)
+</script>
+</body>
+</html>
